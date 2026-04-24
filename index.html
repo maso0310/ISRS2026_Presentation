@@ -106,6 +106,22 @@
 
   footer { text-align: center; padding: 2rem 1rem 6rem; font-size: 0.8rem; color: #888; }
 
+  /* Voice not-male warning banner */
+  #voice-warning {
+    display: none;
+    margin: 0.5rem auto 0;
+    max-width: 1400px;
+    padding: 0.7rem 1rem;
+    background: #fff3e0;
+    color: #bf360c;
+    border: 1px solid #ffb300;
+    border-left: 4px solid #ef6c00;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    border-radius: 4px;
+  }
+  #voice-warning b { color: #e65100; }
+
   /* ================================================================
      Responsive — tablet (≤ 900px): single-column sentence grid
      ================================================================ */
@@ -290,6 +306,8 @@
 
 <button id="to-top" title="Back to top" aria-label="Back to top">↑</button>
 
+<div id="voice-warning" role="alert"></div>
+
 <div class="container" id="container"></div>
 
 <!-- Floating slide-peek panel -->
@@ -326,21 +344,37 @@ let allEnVoices = [];
 let highlightedPair = null;   // { slideNum, pairIdx }
 let playbackToken = 0;        // increments on every stop(); loops must re-check
 
-// Male voice preference patterns (ordered by preference for academic tone)
-const MALE_NATURAL = /Guy|Davis|Tony|Andrew|Brian|Roger|Eric|Steffan|Christopher|Liam|Ryan/i;
-const MALE_FALLBACK = /David|Mark|Alex|Daniel|Aaron|Fred|George|Oliver|Ralph/i;
+// Voice gender heuristics
+const MALE_NATURAL = /\b(Guy|Davis|Tony|Andrew|Brian|Roger|Eric|Steffan|Christopher|Liam|Ryan)\b/i;
+const MALE_FALLBACK = /\b(David|Mark|Alex|Daniel|Aaron|Fred|George|Oliver|Ralph|Reed|Rishi|Eddy|Albert|Bruce|Thomas|James|William|Edward|Henry)\b/i;
+const MALE_KEYWORD = /\b(male|masculine|man|masc)\b/i;
+const FEMALE_MARKER = /\b(Aria|Jenny|Sarah|Nancy|Emma|Samantha|Karen|Tessa|Fiona|Kate|Lily|Mei|Zira|Susan|Victoria|Catherine|Allison|Ava|Serena|Moira|Martha|Siri|female)\b/i;
+
+function isMale(v) {
+  if (FEMALE_MARKER.test(v.name)) return false;
+  return MALE_NATURAL.test(v.name) || MALE_FALLBACK.test(v.name) || MALE_KEYWORD.test(v.name);
+}
+function isFemale(v) {
+  return FEMALE_MARKER.test(v.name);
+}
 
 function pickVoices() {
   const voices = synth.getVoices();
   allEnVoices = voices.filter(v => /^en-/i.test(v.lang));
 
-  // Prefer: Microsoft Natural male → Microsoft classic male → any en-US → any en
-  const preferred = allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_NATURAL.test(v.name) && /Natural|Online/i.test(v.name))
-                 || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_NATURAL.test(v.name))
-                 || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_FALLBACK.test(v.name))
-                 || allEnVoices.find(v => /en-US/i.test(v.lang))
-                 || allEnVoices[0];
-  enVoice = preferred;
+  // 1. Restore user's saved choice (if still available)
+  const savedName = localStorage.getItem("isrs-voice");
+  const restored = savedName ? allEnVoices.find(v => v.name === savedName) : null;
+  if (restored) {
+    enVoice = restored;
+  } else {
+    // 2. Auto-pick preferring male
+    enVoice = allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && isMale(v) && /Natural|Online/i.test(v.name))
+           || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && isMale(v))
+           || allEnVoices.find(v => /en-US/i.test(v.lang) && !isFemale(v))
+           || allEnVoices.find(v => /en-US/i.test(v.lang))
+           || allEnVoices[0];
+  }
 
   zhVoice = voices.find(v => /zh-(TW|HK)/i.test(v.lang))
          || voices.find(v => /^zh/i.test(v.lang));
@@ -349,28 +383,66 @@ function pickVoices() {
   const picker = document.getElementById("voice-picker");
   if (picker && allEnVoices.length) {
     picker.innerHTML = "";
-    allEnVoices.forEach(v => {
+    // Sort: male voices first, then others
+    const sorted = [...allEnVoices].sort((a, b) => {
+      const am = isMale(a), bm = isMale(b);
+      if (am !== bm) return am ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    sorted.forEach(v => {
       const opt = document.createElement("option");
       opt.value = v.name;
-      const tag = MALE_NATURAL.test(v.name) || MALE_FALLBACK.test(v.name) ? " (♂)" : "";
-      opt.textContent = `${v.name} [${v.lang}]${tag}`;
+      const tag = isMale(v) ? "♂ " : (isFemale(v) ? "♀ " : "· ");
+      opt.textContent = `${tag}${v.name} [${v.lang}]`;
       if (enVoice && v.name === enVoice.name) opt.selected = true;
       picker.appendChild(opt);
     });
   }
   updateStatus();
+  updateVoiceWarning();
 }
 
 function updateStatus() {
-  document.getElementById("status").textContent =
+  const el = document.getElementById("status");
+  if (!el) return;
+  el.textContent =
     `EN: ${enVoice ? enVoice.name : "—"}  |  ZH: ${zhVoice ? zhVoice.name : "—"}`;
+}
+
+function updateVoiceWarning() {
+  const warn = document.getElementById("voice-warning");
+  if (!warn) return;
+  if (!enVoice) {
+    warn.style.display = "none";
+    return;
+  }
+  if (isFemale(enVoice) || !isMale(enVoice)) {
+    warn.style.display = "block";
+    const maleCount = allEnVoices.filter(isMale).length;
+    if (maleCount > 0) {
+      warn.innerHTML = `⚠ Current voice "<b>${enVoice.name}</b>" is not male. ` +
+                       `Use the <b>Voice</b> dropdown above and pick a <b>♂</b> option ` +
+                       `(${maleCount} available on this device).`;
+    } else {
+      warn.innerHTML = `⚠ No male English voice detected on this device. ` +
+                       `iOS: Settings → Accessibility → Spoken Content → Voices → English → download "Alex" or "Daniel". ` +
+                       `Android: install more voices via Google Text-to-speech settings.`;
+    }
+  } else {
+    warn.style.display = "none";
+  }
 }
 pickVoices();
 if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoices;
 
 document.getElementById("voice-picker").addEventListener("change", e => {
   const picked = allEnVoices.find(v => v.name === e.target.value);
-  if (picked) { enVoice = picked; updateStatus(); }
+  if (picked) {
+    enVoice = picked;
+    localStorage.setItem("isrs-voice", picked.name);
+    updateStatus();
+    updateVoiceWarning();
+  }
 });
 
 // Jump-to-slide dropdown
