@@ -315,9 +315,6 @@
     <label>ZH: <input type="range" id="speed-zh" min="0.6" max="1.2" step="0.05" value="0.9">
       <span id="speed-zh-val">0.90x</span></label>
     <label><select id="voice-picker" title="English voice"></select></label>
-    <label title="顯示裝置上所有英文語音（含女聲）— 用來在找不到男聲時手動挑選">
-      <input type="checkbox" id="show-all-voices"> 全部
-    </label>
     <label><select id="slide-jump" title="Jump to slide">
       <option value="">Jump to…</option>
     </select></label>
@@ -384,32 +381,24 @@ function isFemale(v) {
   return FEMALE_MARKER.test(_vtag(v));
 }
 
-let showAllVoices = (typeof localStorage !== "undefined" && localStorage.getItem("isrs-show-all") === "1");
-let allEnglishVoices = [];    // ALL en-* voices on device (for diagnostics / show-all mode)
-
 function pickVoices() {
   const voices = synth.getVoices();
-  allEnglishVoices = voices.filter(v => /^en-/i.test(v.lang));
-  const maleEn = allEnglishVoices.filter(v => isMale(v));
-  // Dropdown contents depend on show-all mode
-  allEnVoices = showAllVoices ? allEnglishVoices : maleEn;
+  allEnVoices = voices.filter(v => /^en-/i.test(v.lang));
 
-  // Restore saved choice. In strict (male-only) mode, only restore if saved is male.
+  // Restore saved choice if still available; otherwise auto-pick a reasonable default.
   const savedName = localStorage.getItem("isrs-voice");
-  const savedVoice = savedName ? allEnglishVoices.find(v => v.name === savedName) : null;
-  const savedOk = savedVoice && (showAllVoices || isMale(savedVoice));
+  const savedVoice = savedName ? allEnVoices.find(v => v.name === savedName) : null;
 
-  if (savedOk) {
+  if (savedVoice) {
     enVoice = savedVoice;
-  } else if (maleEn.length) {
-    enVoice = maleEn.find(v => /Natural|Online/i.test(v.name) && /en-(US|GB|AU)/i.test(v.lang))
-           || maleEn.find(v => /en-(US|GB|AU)/i.test(v.lang))
-           || maleEn[0];
-  } else if (showAllVoices && allEnglishVoices.length) {
-    // In show-all mode with no male available, pick the first English voice
-    enVoice = allEnglishVoices[0];
+  } else if (allEnVoices.length) {
+    // Prefer neural (Natural/Online), then a male voice if one exists, then any US/GB/AU, then anything
+    enVoice = allEnVoices.find(v => /Natural|Online/i.test(v.name) && isMale(v))
+           || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && isMale(v))
+           || allEnVoices.find(v => /Natural|Online/i.test(v.name))
+           || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang))
+           || allEnVoices[0];
   } else {
-    // Strict male-only mode with no male: enVoice stays null → speak() will refuse
     enVoice = null;
   }
 
@@ -421,11 +410,11 @@ function pickVoices() {
     picker.innerHTML = "";
     if (allEnVoices.length === 0) {
       const opt = document.createElement("option");
-      opt.textContent = showAllVoices ? "(no English voice on device)" : "(no male voice — tick 全部)";
+      opt.textContent = "(no English voice on device)";
       opt.disabled = true;
       picker.appendChild(opt);
     } else {
-      // Sort: male first, then alpha
+      // Male first, then alpha — just to make male options easier to spot
       const sorted = [...allEnVoices].sort((a, b) => {
         const am = isMale(a), bm = isMale(b);
         if (am !== bm) return am ? -1 : 1;
@@ -434,7 +423,7 @@ function pickVoices() {
       sorted.forEach(v => {
         const opt = document.createElement("option");
         opt.value = v.name;
-        const tag = isMale(v) ? "♂" : (isFemale(v) ? "♀" : "?");
+        const tag = isMale(v) ? "♂" : (isFemale(v) ? "♀" : "·");
         opt.textContent = `${tag} ${v.name} [${v.lang}]`;
         if (enVoice && v.name === enVoice.name) opt.selected = true;
         picker.appendChild(opt);
@@ -442,7 +431,7 @@ function pickVoices() {
     }
   }
   updateStatus();
-  updateVoiceWarning(maleEn.length);
+  updateVoiceWarning();
 }
 
 function updateStatus() {
@@ -453,29 +442,14 @@ function updateStatus() {
     `EN: ${tag} ${enVoice ? enVoice.name : "(none)"}  |  ZH: ${zhVoice ? zhVoice.name : "—"}`;
 }
 
-function updateVoiceWarning(maleCount) {
+function updateVoiceWarning() {
   const warn = document.getElementById("voice-warning");
   if (!warn) return;
-  if (maleCount == null) maleCount = allEnglishVoices.filter(isMale).length;
-
-  if (!enVoice && maleCount === 0) {
-    // No male voice, strict mode: playback blocked
+  // Simplified: only warn when there is no English voice at all on the device.
+  // Otherwise let the user hear whatever the browser gives and switch from the dropdown if desired.
+  if (!enVoice) {
     warn.style.display = "block";
-    warn.innerHTML =
-      `⚠ <b>此裝置沒有偵測到英文男聲。</b> 播放被阻擋以避免誤用女聲。<br>` +
-      `• <b>iOS</b>：設定 → 輔助使用 → 口語內容 → 語音 → 英文 → 下載 <b>Alex / Daniel / Fred / Rishi</b><br>` +
-      `• <b>Android</b>：設定 → 文字轉語音 → Google TTS → 安裝 "English (UK)" male<br>` +
-      `• 若已裝但沒被偵測到，勾選頂部 <b>「全部」</b> 手動選擇 ♂ 標記的語音（找到後可以回報給我改進偵測）`;
-  } else if (enVoice && isFemale(enVoice)) {
-    warn.style.display = "block";
-    warn.innerHTML =
-      `⚠ 目前使用的是女聲「<b>${enVoice.name}</b>」。取消勾選 <b>「全部」</b> 只顯示男聲，` +
-      `或從下拉選單換一個 ♂ 的語音。`;
-  } else if (enVoice && !isMale(enVoice)) {
-    warn.style.display = "block";
-    warn.innerHTML =
-      `ℹ 目前使用「<b>${enVoice.name}</b>」（性別無法自動判定）。若聽起來是女聲，` +
-      `從下拉選單挑一個 ♂ 標記的，或手動切換。`;
+    warn.innerHTML = `⚠ <b>此裝置偵測不到英文語音。</b> 請確認系統已安裝英文 TTS 語音包。`;
   } else {
     warn.style.display = "none";
   }
@@ -484,7 +458,7 @@ pickVoices();
 if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoices;
 
 document.getElementById("voice-picker").addEventListener("change", e => {
-  const picked = allEnglishVoices.find(v => v.name === e.target.value);
+  const picked = allEnVoices.find(v => v.name === e.target.value);
   if (picked) {
     enVoice = picked;
     localStorage.setItem("isrs-voice", picked.name);
@@ -492,17 +466,6 @@ document.getElementById("voice-picker").addEventListener("change", e => {
     updateVoiceWarning();
   }
 });
-
-// "全部" checkbox: toggle show-all mode. Persisted so user doesn't have to re-tick.
-const showAllCb = document.getElementById("show-all-voices");
-if (showAllCb) {
-  showAllCb.checked = showAllVoices;
-  showAllCb.addEventListener("change", e => {
-    showAllVoices = e.target.checked;
-    localStorage.setItem("isrs-show-all", showAllVoices ? "1" : "0");
-    pickVoices();
-  });
-}
 
 // Jump-to-slide dropdown
 const slideJump = document.getElementById("slide-jump");
@@ -577,21 +540,13 @@ document.addEventListener("keydown", e => {
 
 function speak(text, lang, rateOverride, slideNum, pairIdx, onend) {
   if (!text) { if (onend) onend(); return; }
-  // CRITICAL: never let the browser fall back to its default voice.
-  // If lang === "en" but enVoice is null, the OS default (often female) would
-  // silently play. Refuse instead and surface a warning.
-  if (lang === "en" && !enVoice) {
-    flashNoVoice();
-    if (onend) onend();
-    return;
-  }
   // Only cancel the current utterance queue, keep the token alive.
   try { synth.cancel(); } catch (_) {}
 
   const u = new SpeechSynthesisUtterance(text);
   if (lang === "en") {
     u.voice = enVoice;
-    u.lang = enVoice.lang;
+    u.lang = enVoice ? enVoice.lang : "en-US";
     u.rate = rateOverride || speedEN();
   } else {
     u.voice = zhVoice;
@@ -607,16 +562,6 @@ function speak(text, lang, rateOverride, slideNum, pairIdx, onend) {
     highlightPair(slideNum, pairIdx, true);
   }
   synth.speak(u);
-}
-
-function flashNoVoice() {
-  const warn = document.getElementById("voice-warning");
-  if (!warn) return;
-  warn.scrollIntoView({behavior: "smooth", block: "center"});
-  warn.animate([
-    {outline: "3px solid #d84315", outlineOffset: "2px"},
-    {outline: "3px solid transparent", outlineOffset: "2px"},
-  ], {duration: 900, iterations: 2});
 }
 
 // Whole-slide playback: ENGLISH ONLY, no ZH auto-follow.
@@ -741,13 +686,12 @@ function togglePlayPause(btn) {
 // Single-word pronunciation (tap-to-hear, great on mobile)
 function speakWord(word, wordEl) {
   if (!word) return;
-  if (!enVoice) { flashNoVoice(); return; }
   try { synth.cancel(); } catch (_) {}
   document.querySelectorAll(".word.speaking").forEach(w => w.classList.remove("speaking"));
   if (wordEl) wordEl.classList.add("speaking");
   const u = new SpeechSynthesisUtterance(word);
   u.voice = enVoice;
-  u.lang = enVoice.lang;
+  u.lang = enVoice ? enVoice.lang : "en-US";
   u.rate = 0.85;
   u.onend = u.onerror = () => {
     if (wordEl) wordEl.classList.remove("speaking");
