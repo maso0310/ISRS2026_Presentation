@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ISRS 2026 — Training (EN/ZH sentence-level + TTS)</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: 'Inter', 'Noto Sans TC', -apple-system, sans-serif;
+    background: #f7f8fa; color: #222; line-height: 1.55;
+  }
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: #1a237e; color: #fff;
+    padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+  header .controls { display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; font-size: 0.9rem; }
+  header .controls input[type="range"] { width: 130px; }
+  header .controls select {
+    font-size: 0.85rem; padding: 0.25rem 0.4rem;
+    background: #fff; color: #222; border-radius: 3px;
+    border: 1px solid #9fa8da; max-width: 260px;
+  }
+  header button {
+    background: #ffb300; color: #1a1a2e; border: none;
+    padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+  }
+  header button:hover { background: #ffc947; }
+  header button.stop { background: #ef5350; color: #fff; }
+  header .status { font-size: 0.8rem; opacity: 0.85; margin-left: auto; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 1rem 2rem 5rem; }
+  .slide-section {
+    background: #fff; border-radius: 0.5rem; margin-bottom: 1.2rem;
+    padding: 1.2rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    scroll-margin-top: 5rem;
+  }
+  .slide-section h2 {
+    margin: 0 0 0.3rem; font-size: 1.15rem; color: #1a237e;
+    border-left: 4px solid #1a237e; padding-left: 0.6rem;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+  .slide-time { font-size: 0.82rem; color: #666; font-weight: 400; }
+  .cue { font-size: 0.82rem; color: #555; font-style: italic; margin: 0.3rem 0 0.8rem; padding: 0.4rem 0.7rem; background: #f3f4f7; border-radius: 0.25rem; }
+  .slide-play { background: #2e7d32; color: #fff; border: none; padding: 0.35rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+  .slide-play:hover { background: #388e3c; }
+
+  /* Two-column sentence grid: EN left, ZH right */
+  .pair-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.3rem 1rem;
+    margin-top: 0.5rem;
+  }
+  .pair-header {
+    font-size: 0.75rem; font-weight: 600; color: #888;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 0.1rem 0.5rem; border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 0.2rem;
+  }
+  .cell-en, .cell-zh {
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid #e0e0e0;
+    border-radius: 0 0.25rem 0.25rem 0;
+    background: #fcfcfd;
+    transition: background 0.2s, border-left-color 0.2s;
+  }
+  .cell-en { font-size: 1.02rem; color: #1a1a2e; }
+  .cell-zh { font-size: 0.96rem; color: #333; }
+  .cell-en.playing, .cell-zh.playing {
+    background: #fff8e1; border-left-color: #ffb300;
+  }
+  .cell-en .text { display: block; margin-bottom: 0.3rem; }
+  .cell-en .btns { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .cell-en .btns button {
+    font-size: 0.7rem; padding: 0.18rem 0.55rem;
+    border: 1px solid #ccc; background: #fff;
+    border-radius: 3px; cursor: pointer; white-space: nowrap;
+  }
+  .cell-en .btns button:hover { background: #e8eaf6; border-color: #1a237e; color: #1a237e; }
+  .cell-en .btns button.en-slow { border-color: #1976d2; color: #1976d2; }
+  .cell-en .btns button.en-slow:hover { background: #e3f2fd; }
+  .cell-en .btns button.zh { border-color: #e65100; color: #e65100; }
+  .cell-en .btns button.zh:hover { background: #fff3e0; }
+  .cell-en .btns button.practice { border-color: #2e7d32; color: #2e7d32; font-weight: 600; }
+  .cell-en .btns button.practice:hover { background: #e8f5e9; }
+  .cell-en .btns button.practice.drilling { background: #2e7d32; color: #fff; animation: pulse 1.2s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+  }
+
+  footer { text-align: center; padding: 2rem; font-size: 0.8rem; color: #888; }
+
+  @media (max-width: 900px) {
+    .pair-grid { grid-template-columns: 1fr; }
+    .pair-header.zh-header { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ISRS 2026 — Training</h1>
+  <div class="controls">
+    <label>EN speed: <input type="range" id="speed-en" min="0.5" max="1.2" step="0.05" value="0.8">
+      <span id="speed-en-val">0.80x</span></label>
+    <label>ZH speed: <input type="range" id="speed-zh" min="0.6" max="1.2" step="0.05" value="0.9">
+      <span id="speed-zh-val">0.90x</span></label>
+    <label>Voice: <select id="voice-picker"></select></label>
+    <button id="stop-btn" class="stop">&#9632; Stop</button>
+  </div>
+  <div class="status" id="status"></div>
+</header>
+
+<div class="container" id="container"></div>
+
+<footer>
+  Best viewed in Chrome / Edge for voice quality.
+  Per-sentence buttons: <b>EN 慢</b> = slow-speed dictation, <b>EN 1x</b> = normal, <b>ZH</b> = Chinese reference.
+  The per-slide <b>▶ 整張逐句播放</b> plays English only (no Chinese).
+  Click <b>■ Stop</b> or press <b>Esc</b> to stop immediately.
+  Voice is selectable from the top dropdown (♂ marks male voices).
+</footer>
+
+<script>
+const SLIDES = [{"num": 1, "time": "0:00–0:13", "title": "Title", "cue": "warm but professional pace. Brief pause before \"today I'll present\".", "pairs": [["Good morning.", "各位早安。"], ["I'm Han-Hui Huang from National Chung Hsing University.", "我是國立中興大學的黃漢輝。"], ["Today I'll present our work on integrating environmental variables into Taiwan's national-scale forest-type classification — and what strict spatial validation reveals about how each feature group actually behaves across regions.", "今天要報告我們將環境變數整合進台灣全國尺度林型分類的研究，重點在嚴格的空間驗證如何揭露各特徵群組在跨區域上的真實表現。"]]}, {"num": 2, "time": "0:13–0:42", "title": "Background", "cue": "emphasise \"five vegetation belts\" and \"nearly identical\".", "pairs": [["Taiwan compresses extreme ecological diversity into a small footprint.", "台灣在極小的範圍內壓縮了極端的生態多樣性。"], ["Within roughly 100 kilometres of horizontal distance, the island rises from sea level to nearly 4,000 metres, producing five vegetation belts that elsewhere occupy entire continents.", "100 公里水平距離內，海拔從海平面爬到接近 4,000 公尺，產生五個植被帶——在其他地方這些植被帶分布在整個大陸。"], ["The 4th National Forest Inventory aggregates this diversity into six operational forest types — but in the lowland zone, three of these types produce nearly identical satellite spectral signatures.", "第四次全國森林資源調查把這些多樣性歸納為六個作業林型，但在低海拔帶有三類林型的衛星光譜幾乎相同。"], ["So the practical challenge is: can we add information beyond optical reflectance to separate them?", "實務挑戰是：能否加入光譜以外的資訊把它們分開？"]]}, {"num": 3, "time": "0:42–1:07", "title": "Spectral ambiguity", "cue": "point at the figure when saying \"this panel\".", "pairs": [["This panel shows the lowland spectral overlap directly.", "右圖直接展示低海拔光譜重疊：NDVI-NDRE 空間中，闊葉、竹闊混、新生林三類疊成同一個特徵雲。"], ["Plotted in NDVI–NDRE space, broadleaf, bamboo-broadleaf mix, and young forest collapse into one feature cloud.", "光譜特徵導向的分類器，在台灣林型最重疊的地方會最吃力。"], ["Any classifier built on optical features alone will struggle precisely where Taiwan's forest types overlap most.", "這就是地形、氣候、光達冠層結構、土壤等環境變數可以補位的空缺。"], ["This is the gap that environmental variables — terrain, climate, lidar canopy structure, soil — are positioned to fill.", ""]]}, {"num": 4, "time": "0:07–1:32", "title": "Literature & gap", "cue": "this is the \"framing\" slide — keep brisk, set up the questions.", "pairs": [["The literature already shows that environmental integration helps.", "文獻已確認環境整合有效——Fassnacht、Immitzer 在溫帶與歐洲森林證實地形、氣候、土壤的增益；Ploton 2020 指出隨機 CV 會被空間自相關膨脹精度，但未處理「特徵重要性排名是否也被扭曲」這個問題。"], ["Fassnacht and Immitzer document gains from terrain, climate, and soil in temperate and European forests.", "三個缺口：效益能否通過嚴格空間驗證、是否空間均質、哪些特徵群組真正可遷移。"], ["Ploton's work in 2020 highlighted that random cross-validation inflates accuracy via spatial autocorrelation — but did not address whether the inflation also distorts feature-importance rankings.", ""], ["Three gaps remain: does the benefit survive strict spatial validation; is it spatially uniform within one country; and which feature groups actually transfer.", ""]]}, {"num": 5, "time": "1:32–1:50", "title": "Objectives", "cue": "tick objectives off on fingers if comfortable.", "pairs": [["Three objectives map onto these gaps.", "三個研究目的對應上述缺口。"], ["First, quantify environmental integration under three strictness levels of validation.", "一：以三種嚴格度驗證量化環境整合效益。"], ["Second, compare six feature groups via solo and ablation experiments to test transferability.", "二：透過 Solo 與 Ablation 比較六個特徵群組的跨區可遷移性。"], ["Third, assess whether benefits differ across Taiwan's eight forest bureaus, and identify the ecological mechanisms behind any differences.", "三：評估效益在 8 個林管處間是否存在差異，並識別其生態機制。"]]}, {"num": 6, "time": "1:50–2:30", "title": "Data & features", "cue": "this is the most fact-dense slide. Speak slightly slower.", "pairs": [["Labels come from the 4th National Forest Inventory — about 425,000 pixels across six forest classes.", "標籤來自第四次全國森林資源調查——約 425,000 個像素、六個森林類別。"], ["We compare two feature sets: a spectral baseline of 74 Sentinel-2 features, and an environment-integrated set of 269 features that adds canopy structure, terrain, climate, soil, and spatial context.", "比較兩組特徵集：純光譜基線 74 個 Sentinel-2 特徵，以及環境整合集 269 個特徵（增加冠層結構、地形、氣候、土壤、空間情境）。"], ["Both use the same LightGBM classifier — chosen because its TreeSHAP method gives exact feature attributions, which the per-group analysis needs.", "兩組共用 LightGBM 分類器——選用它是因為 TreeSHAP 方法能給出精確的特徵貢獻，這是後面逐群組分析的必要條件。"]]}, {"num": 7, "time": "2:30–3:00", "title": "Validation", "cue": "stress \"zero pixels\" when explaining LOBO.", "pairs": [["We evaluate at three strictness levels.", "三種嚴格度驗證。"], ["Stratified 5-fold CV is the literature baseline — random 20% held out.", "分層 5 折 CV 是文獻基線（隨機 20% 留出）；LORO 把全島切成北/中/南/東四大區留一驗證；LOBO 最嚴格——模型完全看不到目標分署的訓練樣本。"], ["Leave-One-Region-Out splits Taiwan into four super-regions.", "三種並行報告，可以分離「真正的生態學習」與「空間鄰近性人為效應」。"], ["Leave-One-Bureau-Out — LOBO — is the strictest test: the model sees zero pixels from the held-out bureau during training.", "精度全部以 Cohen's Kappa 報告。"], ["Reporting all three lets us separate genuine ecological learning from spatial-proximity artefacts.", ""], ["All accuracy is reported as Cohen's Kappa, the chance-corrected agreement metric standard in remote-sensing forest classification.", ""]]}, {"num": 8, "time": "3:00–3:40", "title": "Result 1: overall accuracy", "cue": "pause briefly before \"But +12% still survives\" — that's the lift-off line.", "pairs": [["The environment-integrated model wins under every validation scheme.", "環境整合模型在三種驗證下都贏。"], ["CV Kappa rises from 0.61 to 0.76 — a 23% gain.", "CV Kappa 從 0.61 升到 0.76——增益 23%。"], ["LORO gives +21%.", "LORO +21%。"], ["Under the strictest LOBO, the lift is +12%.", "最嚴格的 LOBO +12%。"], ["The drop from +23% to +12% tells us roughly half of the CV gain was spatial proximity; the other half is real, transferable learning.", "從 +23% 降到 +12% 說明：大約一半的 CV 增益是空間鄰近性、另一半是真正可遷移的學習。"]]}, {"num": 9, "time": "3:40–4:10", "title": "Result 2: per-bureau LOBO", "cue": "short, can be brisk.", "pairs": [["Every single one of the 8 bureaus shows positive gain under LOBO, but the magnitude varies threefold — from +7.8% in Hualien to +21.6% in Luodong.", "8 個林管處 LOBO 全部正向，但幅度差三倍——從花蓮的 +7.8% 到羅東的 +21.6%。"], ["The pattern is informative: where spectral data quality is weakest, like the cloud-prone northeast, environmental context compensates the most.", "規律是：光譜品質最差的地方（多雲東北部），環境資訊補償最大；光譜本身就可分離的地方（花蓮陡峭地形），環境邊際效益最小。"], ["Where spectral separability is already strong, like Hualien's steep gradient, the marginal benefit shrinks.", ""]]}, {"num": 10, "time": "4:10–4:50", "title": "Result 3: per-class benefits", "cue": "emphasise \"+50%\" with slight stress.", "pairs": [["Per class, the story is uneven.", "逐類效益並不均勻。"], ["Young forest — Class 6 — gains by a large margin: ΔF1 of +0.14, a 50% relative improvement.", "新生林（C6）大幅增益：ΔF1 +0.14、相對 +50%。"], ["The other five classes gain modestly, between 4 and 12 percent.", "其他五類僅 4–12%。"], ["The SHAP per-class decomposition explains why: most types still rely on phenology for 55–69% of their classification signal, but Young forest's phenology share drops to 50%, because it has no stable optical signature — it spans bare soil, saplings, and early vegetation.", "SHAP 分解解釋為什麼：C1–C5 物候仍佔 55–69% 訊號，但 C6 物候份額僅 50%（因為新生林涵蓋裸土、苗木、初期植被，無穩定光譜訊號）。"], ["The missing signal is picked up by lidar canopy height and spatial-context features.", "缺失訊號由光達冠層高度與空間情境補足。"]]}, {"num": 11, "time": "4:50–5:25", "title": "Result 4: SHAP feature shift", "cue": "list the new top-5 with finger taps.", "pairs": [["The shift in feature dependence becomes concrete when we look at the top-5 most important features.", "從前五大特徵看，光譜基線的 Top-5 全是植生指標；環境整合模型的 Top-5 變成春季 LST（物候時序代理）、夏季 SWIR（冠層水分）、海拔、光達冠層高度、SAR 極化。"], ["In the spectral baseline, all five top features are vegetation indices.", "模型從純植生指標變成多源生態特徵簽名。"], ["In the env-integrated model, the top slot is spring land-surface temperature — a phenological-timing proxy — followed by summer SWIR for canopy moisture, elevation, lidar canopy height, and SAR polarisation.", ""], ["The model moves from pure vegetation indices to a multi-source ecological signature.", ""]]}, {"num": 12, "time": "5:25–6:15", "title": "Result 5: cross-regional robustness", "cue": "pause briefly after \"the diagnostic\". Read retention numbers slowly.", "pairs": [["Now the diagnostic.", "這是核心診斷。"], ["We trained six solo models, each restricted to a single feature group, under both CV and LOBO.", "我們訓練 6 個 Solo 模型（每組單獨訓練），分別在 CV 與 LOBO 下計算 Solo Kappa。"], ["The Kappa retention rate — Solo LOBO divided by Solo CV — measures cross-regional stability.", "Kappa 保留率 = Solo LOBO ÷ Solo CV，量化跨區域穩定性。"], ["Phenology and spatial-context retain about 64 percent under spatial extrapolation.", "物候與空間情境保留 64%；土壤、結構 51–53%；地形與氣候僅 44–45%——空間外推時失去一半以上預測力。"], ["Soil and structure retain 51 to 53.", "物候編碼植物生理，跨區最穩定。"], ["Terrain and climate retain only 44 to 45 — losing more than half their predictive power when the target region is withheld.", ""], ["Phenology, which encodes plant biology, is the most cross-regionally stable.", ""]]}, {"num": 13, "time": "6:15–7:10", "title": "Result 6: climate's regional rule", "cue": "this is the most counter-intuitive slide. Stress \"NOT\" clearly. Slow down.", "pairs": [["If we take the environment-integrated model and remove the climate group one bureau at a time, the bureaus split cleanly along Taiwan's windward-leeward gradient.", "從環境整合模型逐分署移除氣候，8 個分署沿著迎風-背風梯度乾淨地分成兩群。"], ["On the east coast — Hualien, Luodong, Taitung — removing climate IMPROVES accuracy.", "東海岸（花蓮、羅東、台東）移除氣候反而**提升**精度；西部與南部（新竹、南投、屏東、嘉義）移除氣候則**降低**精度。"], ["In the west and south — Hsinchu, Nantou, Pingtung, Chiayi — removing climate DEGRADES it.", "這**不是**「氣候有誤導性」的證據，而是直接顯示氣候與林型的關係具區域特異性——單一全域規則無法涵蓋兩種機制。"], ["This is NOT evidence that climate misleads.", ""], ["It is direct evidence that the climate-to-forest-type relationship is regionally specific — a single global rule cannot capture both regimes.", ""]]}, {"num": 14, "time": "7:10–7:55", "title": "Result 7: cross-regional stability summary", "cue": "punchline of the deck. After \"exceeding climate\", brief pause for emphasis.", "pairs": [["Putting Solo CV and Solo LOBO side by side reveals the cleanest finding — a phenomenon we call rank inversion.", "把每組 Solo CV 與 Solo LOBO 並列，最清楚的發現是一種我們稱為「排名反轉」的現象。"], ["Climate ranks number two in CV at Kappa 0.74, but drops to number four under LOBO at 0.33.", "氣候 CV 排第 2（0.74），LOBO 跌至第 4（0.33）；物候 CV 僅第 4（0.67），LOBO 升到第 2（0.43），反超氣候。"], ["Phenology ranks number four in CV at 0.67, but rises to number two under LOBO at 0.43, overtaking climate.", "唯一在 CV 與 LOBO 都奪冠的是空間情境。"], ["Only spatial-context ranks first under both.", "因此 CV 排序會系統性誤判跨區域表現；部署到未見區域時，應以高穩定性群組為主幹。"], ["So CV-based feature ranking systematically mis-orders cross-regional performance, and high-stability groups should be the default backbone when deploying to unseen regions.", ""]]}, {"num": 15, "time": "7:55–8:40", "title": "Discussion", "cue": "the limitation sentence should be brisk — one breath, no over-emphasis.", "pairs": [["Three takeaways.", "三個重點。"], ["First, +12% LOBO is consistent with the literature and is present in all 8 bureaus.", "一、+12% LOBO 與文獻一致，且在 8 個分署皆出現。"], ["Second, phenology's cross-regional stability has a biological basis — leaf flush reflects physiology, not geography, so it transfers.", "二、物候的跨區穩定性有生物基礎——展葉反映生理而非地理，能跨區遷移；氣候則承載較強區域印記，須訓練涵蓋目標區域才能展現完整價值。"], ["Climate features carry stronger regional imprints; they need training coverage to pay off.", "三、氣候移除在不同分署呈現相反反應，顯示氣候與林型的關係具區域特異性。"], ["Third, the opposite per-bureau response to climate removal shows the climate-to-forest-type relationship is regionally specific.", "我們承認標準限制——單一分類器、100 m 格網、時差、六類壓縮——備用頁路線圖已回應。"], ["We acknowledge standard limitations — single classifier, 100-metre grid, time gap, six-class compression — addressed in the backup roadmap.", ""]]}, {"num": 16, "time": "8:40–9:40", "title": "Conclusions", "cue": "the closing. Steady, confident tone. Take 3-second pause before \"Thank you\".", "pairs": [["Three findings.", "三個結論。"], ["First, environmental integration improves classification across all validation schemes — +23% CV, +21% LORO, +12% LOBO — with positive gains in all 8 bureaus.", "一、環境整合提升分類精度——CV +23%、LORO +21%、LOBO +12%，8 個分署皆正向。"], ["Second, cross-regional stability differs across feature groups: phenology retains 64%, climate only 44%.", "二、六個特徵群組的跨區域穩定性差異顯著——物候保留 64%、氣候僅 44%。"], ["Third, the climate-to-forest-type relationship is regionally specific — an east-coast versus west-south split.", "三、氣候與林型的關係具區域特異性——東海岸 vs 西南部對立。"], ["Two practical recommendations: use phenology as the default backbone for unseen regions, and report CV and spatial CV together as a measurement of feature stability.", "兩個實務建議：物候作為部署新區域時的主幹；CV 與空間 CV 並列報告以量化特徵穩定性。"]]}, {"num": 17, "time": "9:40–10:00", "title": "Thank you", "cue": "smile, eye contact with chair.", "pairs": [["Thank you.", "感謝聆聽，歡迎提問。"], ["I'm happy to take questions.", ""]]}];
+
+const synth = window.speechSynthesis;
+let enVoice = null, zhVoice = null;
+let allEnVoices = [];
+let highlightedPair = null;   // { slideNum, pairIdx }
+let playbackToken = 0;        // increments on every stop(); loops must re-check
+
+// Male voice preference patterns (ordered by preference for academic tone)
+const MALE_NATURAL = /Guy|Davis|Tony|Andrew|Brian|Roger|Eric|Steffan|Christopher|Liam|Ryan/i;
+const MALE_FALLBACK = /David|Mark|Alex|Daniel|Aaron|Fred|George|Oliver|Ralph/i;
+
+function pickVoices() {
+  const voices = synth.getVoices();
+  allEnVoices = voices.filter(v => /^en-/i.test(v.lang));
+
+  // Prefer: Microsoft Natural male → Microsoft classic male → any en-US → any en
+  const preferred = allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_NATURAL.test(v.name) && /Natural|Online/i.test(v.name))
+                 || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_NATURAL.test(v.name))
+                 || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && MALE_FALLBACK.test(v.name))
+                 || allEnVoices.find(v => /en-US/i.test(v.lang))
+                 || allEnVoices[0];
+  enVoice = preferred;
+
+  zhVoice = voices.find(v => /zh-(TW|HK)/i.test(v.lang))
+         || voices.find(v => /^zh/i.test(v.lang));
+
+  // Populate voice picker dropdown
+  const picker = document.getElementById("voice-picker");
+  if (picker && allEnVoices.length) {
+    picker.innerHTML = "";
+    allEnVoices.forEach(v => {
+      const opt = document.createElement("option");
+      opt.value = v.name;
+      const tag = MALE_NATURAL.test(v.name) || MALE_FALLBACK.test(v.name) ? " (♂)" : "";
+      opt.textContent = `${v.name} [${v.lang}]${tag}`;
+      if (enVoice && v.name === enVoice.name) opt.selected = true;
+      picker.appendChild(opt);
+    });
+  }
+  updateStatus();
+}
+
+function updateStatus() {
+  document.getElementById("status").textContent =
+    `EN: ${enVoice ? enVoice.name : "—"}  |  ZH: ${zhVoice ? zhVoice.name : "—"}`;
+}
+pickVoices();
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoices;
+
+document.getElementById("voice-picker").addEventListener("change", e => {
+  const picked = allEnVoices.find(v => v.name === e.target.value);
+  if (picked) { enVoice = picked; updateStatus(); }
+});
+
+function speedEN() { return parseFloat(document.getElementById("speed-en").value); }
+function speedZH() { return parseFloat(document.getElementById("speed-zh").value); }
+
+document.getElementById("speed-en").addEventListener("input", e => {
+  document.getElementById("speed-en-val").textContent = (+e.target.value).toFixed(2) + "x";
+});
+document.getElementById("speed-zh").addEventListener("input", e => {
+  document.getElementById("speed-zh-val").textContent = (+e.target.value).toFixed(2) + "x";
+});
+
+function highlightPair(slideNum, pairIdx, on) {
+  const sec = document.getElementById(`slide-${slideNum}`);
+  if (!sec) return;
+  const cells = sec.querySelectorAll(`[data-pair="${pairIdx}"]`);
+  cells.forEach(c => c.classList.toggle("playing", on));
+  if (on) highlightedPair = { slideNum, pairIdx };
+}
+
+function clearHighlight() {
+  if (highlightedPair) {
+    highlightPair(highlightedPair.slideNum, highlightedPair.pairIdx, false);
+    highlightedPair = null;
+  }
+}
+
+function stop() {
+  // Invalidate any in-flight playback loop and cancel synth queue
+  playbackToken++;
+  try { synth.cancel(); } catch (_) {}
+  clearHighlight();
+}
+document.getElementById("stop-btn").onclick = stop;
+
+// Global keyboard: Esc also stops
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") stop();
+});
+
+function speak(text, lang, rateOverride, slideNum, pairIdx, onend) {
+  if (!text) { if (onend) onend(); return; }
+  // Do NOT call stop() here — that would interrupt a playback loop.
+  // Only cancel the current utterance queue, keep the token alive.
+  try { synth.cancel(); } catch (_) {}
+
+  const u = new SpeechSynthesisUtterance(text);
+  if (lang === "en") {
+    u.voice = enVoice;
+    u.lang = enVoice ? enVoice.lang : "en-US";
+    u.rate = rateOverride || speedEN();
+  } else {
+    u.voice = zhVoice;
+    u.lang = zhVoice ? zhVoice.lang : "zh-TW";
+    u.rate = rateOverride || speedZH();
+  }
+  u.onend = () => {
+    clearHighlight();
+    if (onend) onend();
+  };
+  u.onerror = u.onend;
+  if (slideNum != null && pairIdx != null) {
+    highlightPair(slideNum, pairIdx, true);
+  }
+  synth.speak(u);
+}
+
+// Whole-slide playback: ENGLISH ONLY, no ZH auto-follow.
+// Uses playbackToken so the Stop button / Esc aborts immediately.
+function playSlide(slideIdx) {
+  const myToken = ++playbackToken;
+  const slide = SLIDES[slideIdx];
+  const pairs = slide.pairs;
+  let i = 0;
+  function next() {
+    if (myToken !== playbackToken) return;   // stopped
+    if (i >= pairs.length) return;           // done
+    const [en] = pairs[i];
+    const enCell = document.querySelector(`#slide-${slide.num} .cell-en[data-pair="${i}"]`);
+    if (enCell) enCell.scrollIntoView({behavior: "smooth", block: "center"});
+    if (!en) { i++; next(); return; }        // skip empty pairs
+    speak(en, "en", null, slide.num, i, () => {
+      if (myToken !== playbackToken) return;
+      i++;
+      next();
+    });
+  }
+  next();
+}
+
+// Build the DOM
+const container = document.getElementById("container");
+SLIDES.forEach((slide, slideIdx) => {
+  const sec = document.createElement("section");
+  sec.className = "slide-section";
+  sec.id = `slide-${slide.num}`;
+  const rows = slide.pairs.map((p, i) => `
+    <div class="cell-en" data-pair="${i}">
+      <span class="text">${escapeHtml(p[0]) || "<em style='color:#aaa'>(no EN)</em>"}</span>
+      <div class="btns">
+        <button class="practice" data-action="practice" data-pair="${i}" title="Drill this sentence 3× with pauses for shadowing">🔁 練 3×</button>
+        <button class="en-slow" data-action="en-slow" data-pair="${i}">EN 慢</button>
+        <button class="en-normal" data-action="en-normal" data-pair="${i}">EN 1x</button>
+        <button class="zh" data-action="zh" data-pair="${i}">ZH</button>
+      </div>
+    </div>
+    <div class="cell-zh" data-pair="${i}">${escapeHtml(p[1]) || "<em style='color:#aaa'>(無對應中文)</em>"}</div>
+  `).join("");
+  sec.innerHTML = `
+    <h2>
+      <span>S${slide.num} — ${slide.title}
+        <span class="slide-time">${slide.time}</span>
+      </span>
+      <button class="slide-play" data-idx="${slideIdx}">&#9654; 整張逐句播放</button>
+    </h2>
+    ${slide.cue ? `<div class="cue"><strong>Cue:</strong> ${slide.cue}</div>` : ""}
+    <div class="pair-grid">
+      <div class="pair-header en-header">English</div>
+      <div class="pair-header zh-header">中文對照</div>
+      ${rows}
+    </div>
+  `;
+  container.appendChild(sec);
+});
+
+// Wire up button handlers
+container.addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn.classList.contains("slide-play")) {
+    playSlide(parseInt(btn.dataset.idx, 10));
+    return;
+  }
+  const action = btn.dataset.action;
+  if (!action) return;
+  const pairIdx = parseInt(btn.dataset.pair, 10);
+  const slide = btn.closest(".slide-section");
+  const slideNum = parseInt(slide.id.replace("slide-", ""), 10);
+  const slideObj = SLIDES.find(s => s.num === slideNum);
+  const [en, zh] = slideObj.pairs[pairIdx];
+  if (action === "en-slow") speak(en, "en", null, slideNum, pairIdx);
+  else if (action === "en-normal") speak(en, "en", 1.0, slideNum, pairIdx);
+  else if (action === "zh") speak(zh, "zh", null, slideNum, pairIdx);
+  else if (action === "practice") practiceSentence(slideNum, pairIdx, en, btn);
+});
+
+// Drill one sentence 3x: slow → pause → slow → pause → normal.
+// Gives you two slow-speed listens to internalise the rhythm and a normal-speed
+// reference at the end. Stop button / Esc aborts mid-drill cleanly.
+function practiceSentence(slideNum, pairIdx, en, btn) {
+  if (!en) return;
+  const myToken = ++playbackToken;
+  btn.classList.add("drilling");
+  const steps = [
+    { rate: null, pause: 2500 },   // slow speed, 2.5s gap (you shadow)
+    { rate: null, pause: 2500 },   // slow again, 2.5s gap
+    { rate: 1.0,  pause: 0 },      // normal speed, final reference
+  ];
+  let i = 0;
+  function step() {
+    if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
+    if (i >= steps.length) { btn.classList.remove("drilling"); return; }
+    const s = steps[i++];
+    speak(en, "en", s.rate, slideNum, pairIdx, () => {
+      if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
+      if (s.pause > 0) {
+        setTimeout(() => {
+          if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
+          step();
+        }, s.pause);
+      } else {
+        step();
+      }
+    });
+  }
+  step();
+}
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+}
+</script>
+</body>
+</html>
