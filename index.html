@@ -92,17 +92,36 @@
     border-radius: 3px; cursor: pointer; white-space: nowrap;
   }
   .cell-en .btns button:hover { background: #e8eaf6; border-color: #1a237e; color: #1a237e; }
-  .cell-en .btns button.en-slow { border-color: #1976d2; color: #1976d2; }
-  .cell-en .btns button.en-slow:hover { background: #e3f2fd; }
-  .cell-en .btns button.zh { border-color: #e65100; color: #e65100; }
-  .cell-en .btns button.zh:hover { background: #fff3e0; }
-  .cell-en .btns button.practice { border-color: #2e7d32; color: #2e7d32; font-weight: 600; }
-  .cell-en .btns button.practice:hover { background: #e8f5e9; }
-  .cell-en .btns button.practice.drilling { background: #2e7d32; color: #fff; animation: pulse 1.2s infinite; }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.75; }
+  /* Per-sentence play/stop toggle */
+  .cell-en .btns button.play-toggle {
+    border-color: #2e7d32; color: #2e7d32; font-weight: 600;
+    font-size: 0.8rem; padding: 0.35rem 1rem;
+    min-width: 86px;
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    justify-content: center;
   }
+  .cell-en .btns button.play-toggle:hover { background: #e8f5e9; }
+  .cell-en .btns button.play-toggle.playing {
+    background: #c62828; color: #fff; border-color: #c62828;
+  }
+  .cell-en .btns button.play-toggle.playing:hover { background: #d32f2f; }
+
+  /* Tap-any-word to pronounce (mobile-friendly) */
+  .cell-en .text .word {
+    display: inline;
+    padding: 0 1px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .cell-en .text .word:hover { background: #e3f2fd; }
+  .cell-en .text .word:active { background: #bbdefb; }
+  .cell-en .text .word.speaking { background: #fff59d; }
+
+  /* Tap ZH cell to play Chinese */
+  .cell-zh { cursor: pointer; }
+  .cell-zh:hover { background: #fff8e1; }
+  .cell-zh.playing { background: #fff8e1; }
 
   footer { text-align: center; padding: 2rem 1rem 6rem; font-size: 0.8rem; color: #888; }
 
@@ -327,12 +346,13 @@
 <footer>
   <p style="margin:0 0 0.5rem;">Best viewed in Chrome, Edge, or Safari for voice quality.</p>
   <p style="margin:0 0 0.5rem;">
-    <b>🔁 練 3×</b> drill with pauses ·
-    <b>EN 慢</b> / <b>EN 1x</b> / <b>ZH</b> single play ·
-    <b>📄 看投影片</b> floating slide preview ·
-    <b>▶ 整張逐句播放</b> whole-slide English only
+    <b>&#9654; 播放 / &#9632; 停止</b> per-sentence toggle ·
+    Tap <b>any English word</b> to hear just that word ·
+    Tap a <b>Chinese sentence</b> to hear it ·
+    <b>📄 看投影片</b> slide preview ·
+    <b>&#9654; 整張逐句播放</b> whole-slide English
   </p>
-  <p style="margin:0;">Stop anytime with the red button, <b>Esc</b> (desktop), or tap Stop on mobile.</p>
+  <p style="margin:0;">Stop anytime with the red Stop button (header), <b>Esc</b> (desktop), or tap the red ■ on a sentence.</p>
 </footer>
 
 <script>
@@ -360,43 +380,43 @@ function isFemale(v) {
 
 function pickVoices() {
   const voices = synth.getVoices();
-  allEnVoices = voices.filter(v => /^en-/i.test(v.lang));
+  const allEn = voices.filter(v => /^en-/i.test(v.lang));
+  // Male-only policy: never show or auto-pick a female voice.
+  allEnVoices = allEn.filter(v => isMale(v));
 
-  // 1. Restore user's saved choice (if still available)
   const savedName = localStorage.getItem("isrs-voice");
   const restored = savedName ? allEnVoices.find(v => v.name === savedName) : null;
   if (restored) {
     enVoice = restored;
-  } else {
-    // 2. Auto-pick preferring male
-    enVoice = allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && isMale(v) && /Natural|Online/i.test(v.name))
-           || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang) && isMale(v))
-           || allEnVoices.find(v => /en-US/i.test(v.lang) && !isFemale(v))
-           || allEnVoices.find(v => /en-US/i.test(v.lang))
+  } else if (allEnVoices.length) {
+    enVoice = allEnVoices.find(v => /Natural|Online/i.test(v.name) && /en-(US|GB|AU)/i.test(v.lang))
+           || allEnVoices.find(v => /en-(US|GB|AU)/i.test(v.lang))
            || allEnVoices[0];
+  } else {
+    enVoice = null;
   }
 
   zhVoice = voices.find(v => /zh-(TW|HK)/i.test(v.lang))
          || voices.find(v => /^zh/i.test(v.lang));
 
-  // Populate voice picker dropdown
   const picker = document.getElementById("voice-picker");
-  if (picker && allEnVoices.length) {
+  if (picker) {
     picker.innerHTML = "";
-    // Sort: male voices first, then others
-    const sorted = [...allEnVoices].sort((a, b) => {
-      const am = isMale(a), bm = isMale(b);
-      if (am !== bm) return am ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    sorted.forEach(v => {
+    if (allEnVoices.length === 0) {
       const opt = document.createElement("option");
-      opt.value = v.name;
-      const tag = isMale(v) ? "♂ " : (isFemale(v) ? "♀ " : "· ");
-      opt.textContent = `${tag}${v.name} [${v.lang}]`;
-      if (enVoice && v.name === enVoice.name) opt.selected = true;
+      opt.textContent = "(no male voice on this device)";
+      opt.disabled = true;
       picker.appendChild(opt);
-    });
+    } else {
+      const sorted = [...allEnVoices].sort((a, b) => a.name.localeCompare(b.name));
+      sorted.forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = `♂ ${v.name} [${v.lang}]`;
+        if (enVoice && v.name === enVoice.name) opt.selected = true;
+        picker.appendChild(opt);
+      });
+    }
   }
   updateStatus();
   updateVoiceWarning();
@@ -412,25 +432,14 @@ function updateStatus() {
 function updateVoiceWarning() {
   const warn = document.getElementById("voice-warning");
   if (!warn) return;
-  if (!enVoice) {
+  if (enVoice) {
     warn.style.display = "none";
     return;
   }
-  if (isFemale(enVoice) || !isMale(enVoice)) {
-    warn.style.display = "block";
-    const maleCount = allEnVoices.filter(isMale).length;
-    if (maleCount > 0) {
-      warn.innerHTML = `⚠ Current voice "<b>${enVoice.name}</b>" is not male. ` +
-                       `Use the <b>Voice</b> dropdown above and pick a <b>♂</b> option ` +
-                       `(${maleCount} available on this device).`;
-    } else {
-      warn.innerHTML = `⚠ No male English voice detected on this device. ` +
-                       `iOS: Settings → Accessibility → Spoken Content → Voices → English → download "Alex" or "Daniel". ` +
-                       `Android: install more voices via Google Text-to-speech settings.`;
-    }
-  } else {
-    warn.style.display = "none";
-  }
+  warn.style.display = "block";
+  warn.innerHTML = `⚠ <b>No male English voice on this device.</b> ` +
+                   `iOS: Settings → Accessibility → Spoken Content → Voices → English → download <b>Alex</b>, <b>Daniel</b>, or <b>Fred</b>. ` +
+                   `Android: install "English (UK) male" via Google Text-to-speech settings.`;
 }
 pickVoices();
 if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoices;
@@ -499,6 +508,15 @@ function stop() {
   playbackToken++;
   try { synth.cancel(); } catch (_) {}
   clearHighlight();
+  resetPlayButtons();
+}
+
+function resetPlayButtons() {
+  document.querySelectorAll(".play-toggle.playing").forEach(b => {
+    b.classList.remove("playing");
+    b.innerHTML = '<span class="play-icon">&#9654;</span> <span class="play-label">播放</span>';
+  });
+  document.querySelectorAll(".word.speaking").forEach(w => w.classList.remove("speaking"));
 }
 document.getElementById("stop-btn").onclick = stop;
 
@@ -565,15 +583,14 @@ SLIDES.forEach((slide, slideIdx) => {
   sec.id = `slide-${slide.num}`;
   const rows = slide.pairs.map((p, i) => `
     <div class="cell-en" data-pair="${i}">
-      <span class="text">${escapeHtml(p[0]) || "<em style='color:#aaa'>(no EN)</em>"}</span>
+      <span class="text">${renderWords(p[0])}</span>
       <div class="btns">
-        <button class="practice" data-action="practice" data-pair="${i}" title="Drill this sentence 3× with pauses for shadowing">🔁 練 3×</button>
-        <button class="en-slow" data-action="en-slow" data-pair="${i}">EN 慢</button>
-        <button class="en-normal" data-action="en-normal" data-pair="${i}">EN 1x</button>
-        <button class="zh" data-action="zh" data-pair="${i}">ZH</button>
+        <button class="play-toggle" data-action="toggle" data-pair="${i}" title="播放 / 停止此句英文">
+          <span class="play-icon">&#9654;</span> <span class="play-label">播放</span>
+        </button>
       </div>
     </div>
-    <div class="cell-zh" data-pair="${i}">${escapeHtml(p[1]) || "<em style='color:#aaa'>(無對應中文)</em>"}</div>
+    <div class="cell-zh" data-pair="${i}" title="點一下播放中文">${escapeHtml(p[1]) || "<em style='color:#aaa'>(無對應中文)</em>"}</div>
   `).join("");
   sec.innerHTML = `
     <h2>
@@ -595,61 +612,95 @@ SLIDES.forEach((slide, slideIdx) => {
   container.appendChild(sec);
 });
 
-// Wire up button handlers
+// Wire up click handlers: words, ZH cells, toggle buttons, slide play
 container.addEventListener("click", e => {
+  // 1. Tap an English word → pronounce just that word
+  const w = e.target.closest(".word");
+  if (w) {
+    const word = (w.dataset.word || w.textContent || "").trim();
+    if (word) speakWord(word, w);
+    e.stopPropagation();
+    return;
+  }
+  // 2. Tap a ZH cell → play the Chinese sentence (unless a button was hit)
+  const zhCell = e.target.closest(".cell-zh");
+  if (zhCell && !e.target.closest("button")) {
+    const pairIdx = parseInt(zhCell.dataset.pair, 10);
+    const slideSec = zhCell.closest(".slide-section");
+    const slideNum = parseInt(slideSec.id.replace("slide-", ""), 10);
+    const slideObj = SLIDES.find(s => s.num === slideNum);
+    if (slideObj) {
+      const [, zh] = slideObj.pairs[pairIdx];
+      if (zh) speak(zh, "zh", null, slideNum, pairIdx);
+    }
+    return;
+  }
+  // 3. Buttons
   const btn = e.target.closest("button");
   if (!btn) return;
   if (btn.classList.contains("slide-play")) {
     playSlide(parseInt(btn.dataset.idx, 10));
     return;
   }
-  const action = btn.dataset.action;
-  if (!action) return;
-  const pairIdx = parseInt(btn.dataset.pair, 10);
-  const slide = btn.closest(".slide-section");
-  const slideNum = parseInt(slide.id.replace("slide-", ""), 10);
-  const slideObj = SLIDES.find(s => s.num === slideNum);
-  const [en, zh] = slideObj.pairs[pairIdx];
-  if (action === "en-slow") speak(en, "en", null, slideNum, pairIdx);
-  else if (action === "en-normal") speak(en, "en", 1.0, slideNum, pairIdx);
-  else if (action === "zh") speak(zh, "zh", null, slideNum, pairIdx);
-  else if (action === "practice") practiceSentence(slideNum, pairIdx, en, btn);
+  if (btn.dataset.action === "toggle") {
+    togglePlayPause(btn);
+  }
 });
 
-// Drill one sentence 3x: slow → pause → slow → pause → normal.
-// Gives you two slow-speed listens to internalise the rhythm and a normal-speed
-// reference at the end. Stop button / Esc aborts mid-drill cleanly.
-function practiceSentence(slideNum, pairIdx, en, btn) {
+// Per-sentence play/stop toggle
+function togglePlayPause(btn) {
+  if (btn.classList.contains("playing")) {
+    stop();
+    return;
+  }
+  stop();   // halt any other playback first; won't affect this btn since it's idle
+  const pairIdx = parseInt(btn.dataset.pair, 10);
+  const slideSec = btn.closest(".slide-section");
+  const slideNum = parseInt(slideSec.id.replace("slide-", ""), 10);
+  const slideObj = SLIDES.find(s => s.num === slideNum);
+  if (!slideObj) return;
+  const [en] = slideObj.pairs[pairIdx];
   if (!en) return;
   const myToken = ++playbackToken;
-  btn.classList.add("drilling");
-  const steps = [
-    { rate: null, pause: 2500 },   // slow speed, 2.5s gap (you shadow)
-    { rate: null, pause: 2500 },   // slow again, 2.5s gap
-    { rate: 1.0,  pause: 0 },      // normal speed, final reference
-  ];
-  let i = 0;
-  function step() {
-    if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
-    if (i >= steps.length) { btn.classList.remove("drilling"); return; }
-    const s = steps[i++];
-    speak(en, "en", s.rate, slideNum, pairIdx, () => {
-      if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
-      if (s.pause > 0) {
-        setTimeout(() => {
-          if (myToken !== playbackToken) { btn.classList.remove("drilling"); return; }
-          step();
-        }, s.pause);
-      } else {
-        step();
-      }
-    });
-  }
-  step();
+  btn.classList.add("playing");
+  btn.innerHTML = '<span class="play-icon">&#9632;</span> <span class="play-label">停止</span>';
+  speak(en, "en", null, slideNum, pairIdx, () => {
+    if (myToken !== playbackToken) return;
+    btn.classList.remove("playing");
+    btn.innerHTML = '<span class="play-icon">&#9654;</span> <span class="play-label">播放</span>';
+  });
+}
+
+// Single-word pronunciation (tap-to-hear, great on mobile)
+function speakWord(word, wordEl) {
+  if (!word) return;
+  try { synth.cancel(); } catch (_) {}
+  document.querySelectorAll(".word.speaking").forEach(w => w.classList.remove("speaking"));
+  if (wordEl) wordEl.classList.add("speaking");
+  const u = new SpeechSynthesisUtterance(word);
+  u.voice = enVoice;
+  u.lang = enVoice ? enVoice.lang : "en-US";
+  u.rate = 0.85;
+  u.onend = u.onerror = () => {
+    if (wordEl) wordEl.classList.remove("speaking");
+  };
+  synth.speak(u);
+}
+
+// Wrap each word in a clickable span. Whitespace and punctuation preserved.
+function renderWords(en) {
+  if (!en) return "<em style='color:#aaa'>(no EN)</em>";
+  return en.split(/(\s+)/).map(t => {
+    if (/^\s*$/.test(t)) return t;
+    const esc = escapeHtml(t);
+    const clean = t.replace(/^[^A-Za-z0-9'’]+|[^A-Za-z0-9'’]+$/g, "").trim();
+    if (!clean) return esc;
+    return `<span class="word" data-word="${escapeHtml(clean)}">${esc}</span>`;
+  }).join("");
 }
 
 function escapeHtml(s) {
-  return (s || "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
 // ===== Slide peek panel =====

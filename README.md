@@ -5,10 +5,13 @@ Interactive bilingual training page for the ISRS 2026 oral talk.
 ## Features
 
 - 17 slides, 80+ sentence pairs split EN / ZH side by side
-- Browser-native TTS (Web Speech API) — male English voice by default
-- Per-sentence buttons: **🔁 練 3×** drill, **EN 慢**, **EN 1x**, **ZH**
+- Browser-native TTS (Web Speech API) — **male English voice only** (female voices filtered out)
+- Per-sentence **▶ 播放 / ■ 停止** toggle
+- **Tap any English word** to hear its pronunciation
+- **Tap a Chinese sentence** to hear it read aloud
 - Per-slide **▶ 整張逐句播放** (English only)
 - Stop anytime with the top red button or **Esc** key
+- Voice choice persists across reloads (localStorage)
 
 ## Open locally
 
@@ -22,6 +25,6 @@ See `../DEPLOY_TO_GITHUB_PAGES.md` for step-by-step instructions.
 
 - Best voices are available in **Microsoft Edge** (Natural neural voices).
 - Chrome on desktop uses Google voices; quality varies.
-- On **iPhone Safari** you get **Alex** / **Daniel** — quite good.
+- On **iPhone Safari** you get **Alex** / **Daniel** / **Fred** — quite good.
 - On **Android Chrome** you get Google voices — acceptable.
-- Use the Voice dropdown in the header to switch if auto-pick chose a female.
+- If no male voice is available, a warning banner tells you how to install one.
