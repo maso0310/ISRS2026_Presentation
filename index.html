@@ -102,6 +102,57 @@
     .pair-grid { grid-template-columns: 1fr; }
     .pair-header.zh-header { display: none; }
   }
+
+  /* Peek panel — floating slide preview */
+  .peek-btn {
+    background: #1565c0; color: #fff; border: none;
+    padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer;
+    font-size: 0.75rem; font-weight: 600; margin-right: 0.3rem;
+  }
+  .peek-btn:hover { background: #1976d2; }
+  .peek-panel {
+    position: fixed; bottom: 1rem; right: 1rem;
+    width: min(640px, 92vw);
+    background: #ffffff; border: 1px solid #ccc;
+    border-radius: 0.5rem; z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    display: none; overflow: hidden;
+  }
+  .peek-panel.show { display: block; }
+  .peek-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    background: #1a237e; color: #fff; font-size: 0.85rem;
+  }
+  .peek-title { flex: 1; font-weight: 600; }
+  .peek-header button {
+    background: rgba(255,255,255,0.15); color: #fff; border: none;
+    padding: 0.25rem 0.6rem; border-radius: 3px; cursor: pointer;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .peek-header button.active { background: #ffb300; color: #1a1a2e; }
+  .peek-header button:hover { background: rgba(255,255,255,0.28); }
+  .peek-header button.active:hover { background: #ffc947; }
+  .peek-header button.close-btn { background: #c62828; }
+  .peek-header button.close-btn:hover { background: #ef5350; }
+  .peek-body {
+    background: #111; padding: 0.25rem;
+    display: flex; justify-content: center; align-items: center;
+  }
+  .peek-body img {
+    display: block; width: 100%; height: auto;
+    max-height: 56vh; object-fit: contain;
+    border-radius: 0.25rem;
+  }
+  .peek-panel.mini {
+    width: 280px;
+  }
+  .peek-panel.mini .peek-body img { max-height: 30vh; }
+
+  @media (max-width: 600px) {
+    .peek-panel { left: 0.5rem; right: 0.5rem; width: auto; bottom: 0.5rem; }
+    .peek-body img { max-height: 45vh; }
+  }
 </style>
 </head>
 <body>
@@ -120,6 +171,20 @@
 </header>
 
 <div class="container" id="container"></div>
+
+<!-- Floating slide-peek panel -->
+<div class="peek-panel" id="peek">
+  <div class="peek-header">
+    <span class="peek-title" id="peek-title">—</span>
+    <button id="peek-en" class="active" onclick="setPeekLang('en')">EN</button>
+    <button id="peek-zh" onclick="setPeekLang('zh')">ZH</button>
+    <button onclick="togglePeekSize()" title="Toggle size">⇲</button>
+    <button class="close-btn" onclick="closePeek()">✕</button>
+  </div>
+  <div class="peek-body">
+    <img id="peek-img" alt="slide preview">
+  </div>
+</div>
 
 <footer>
   Best viewed in Chrome / Edge for voice quality.
@@ -296,7 +361,10 @@ SLIDES.forEach((slide, slideIdx) => {
       <span>S${slide.num} — ${slide.title}
         <span class="slide-time">${slide.time}</span>
       </span>
-      <button class="slide-play" data-idx="${slideIdx}">&#9654; 整張逐句播放</button>
+      <span>
+        <button class="peek-btn" onclick="openPeek(${slide.num})" title="Show slide">📄 看投影片</button>
+        <button class="slide-play" data-idx="${slideIdx}">&#9654; 整張逐句播放</button>
+      </span>
     </h2>
     ${slide.cue ? `<div class="cue"><strong>Cue:</strong> ${slide.cue}</div>` : ""}
     <div class="pair-grid">
@@ -363,6 +431,41 @@ function practiceSentence(slideNum, pairIdx, en, btn) {
 
 function escapeHtml(s) {
   return (s || "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+}
+
+// ===== Slide peek panel =====
+// Training script slide S1-S17 maps 1:1 to display position,
+// which matches slide_01.png .. slide_17.png in slide_images/{lang}/.
+let peekCurrent = { num: 1, lang: "en" };
+
+function openPeek(slideNum) {
+  peekCurrent.num = slideNum;
+  const panel = document.getElementById("peek");
+  document.getElementById("peek-title").textContent =
+    `S${slideNum} — ${SLIDES.find(s => s.num === slideNum)?.title || ""}`;
+  refreshPeekImg();
+  panel.classList.add("show");
+}
+
+function closePeek() {
+  document.getElementById("peek").classList.remove("show");
+}
+
+function setPeekLang(lang) {
+  peekCurrent.lang = lang;
+  document.getElementById("peek-en").classList.toggle("active", lang === "en");
+  document.getElementById("peek-zh").classList.toggle("active", lang === "zh");
+  refreshPeekImg();
+}
+
+function togglePeekSize() {
+  document.getElementById("peek").classList.toggle("mini");
+}
+
+function refreshPeekImg() {
+  const pad = String(peekCurrent.num).padStart(2, "0");
+  document.getElementById("peek-img").src =
+    `slide_images/${peekCurrent.lang}/slide_${pad}.png`;
 }
 </script>
 </body>
